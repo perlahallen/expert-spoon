@@ -1,219 +1,273 @@
 #include <iostream>
 #include <vector>
-#include <list>
-#include <memory>
-#include <algorithm>
-#include <exception>
 #include <string>
+#include <memory>
+#include <stdexcept>
+#include <algorithm>
+#include <list>
+#include <ranges>
+#include <mutex>
+#include <thread>
 
-class LibraryException : public std::exception {
+std::mutex coutMutex;
+
+class Animal {
 public:
-    explicit LibraryException(std::string message) : msg_(std::move(message)) {}
-    [[nodiscard]] const char* what() const noexcept override {
-        return msg_.c_str();
-    }
-
-private:
-    std::string msg_;
-};
-
-class LibraryItem {
-public:
-    virtual ~LibraryItem() = default;
+    virtual ~Animal() = default;
+    virtual void speak() const = 0;
     virtual void display() const = 0;
+    [[nodiscard]] virtual Animal* clone() const = 0;
     [[nodiscard]] virtual std::string getType() const = 0;
+    virtual void info() const = 0;
 };
 
-class Book : public LibraryItem {
+class Dog : public Animal {
+private:
+    std::string name;
 public:
-    explicit Book(std::string title, std::string author)
-        : title_(std::move(title)), author_(std::move(author)) {}
+    explicit Dog(std::string name) : name(std::move(name)) {}
 
-    Book(const Book& other) : title_(other.title_), author_(other.author_) {}
-
-    Book& operator=(const Book& other) {
-        if (this != &other) {
-            title_ = other.title_;
-            author_ = other.author_;
-        }
-        return *this;
+    void speak() const override {
+        std::cout << name << " says Woof!" << std::endl;
     }
 
     void display() const override {
-        std::cout << "Book: " << title_ << " by " << author_ << std::endl;
+        std::cout << "Dog: " << name << std::endl;
+    }
+
+    [[nodiscard]] Animal* clone() const override {
+        return new Dog(*this);
     }
 
     [[nodiscard]] std::string getType() const override {
-        return "Book";
+        return "Dog";
     }
 
-private:
-    std::string title_;
-    std::string author_;
+    void info() const override {
+        std::cout << "Dog Info: " << name << std::endl;
+    }
 };
 
-class Magazine : public LibraryItem {
+class Cat : public Animal {
+private:
+    std::string name;
 public:
-    explicit Magazine(std::string title, int issue)
-        : title_(std::move(title)), issue_(issue) {}
+    explicit Cat(std::string name) : name(std::move(name)) {}
 
-    Magazine(const Magazine& other) : title_(other.title_), issue_(other.issue_) {}
-
-    Magazine& operator=(const Magazine& other) {
-        if (this != &other) {
-            title_ = other.title_;
-            issue_ = other.issue_;
-        }
-        return *this;
+    void speak() const override {
+        std::cout << name << " says Meow!" << std::endl;
     }
 
     void display() const override {
-        std::cout << "Magazine: " << title_ << " Issue: " << issue_ << std::endl;
+        std::cout << "Cat: " << name << std::endl;
+    }
+
+    [[nodiscard]] Animal* clone() const override {
+        return new Cat(*this);
     }
 
     [[nodiscard]] std::string getType() const override {
-        return "Magazine";
+        return "Cat";
     }
 
-private:
-    std::string title_;
-    int issue_;
+    void info() const override {
+        std::cout << "Cat Info: " << name << std::endl;
+    }
 };
 
-class Member {
+class AbstractAnimalFactory {
 public:
-    explicit Member(std::string name) : name_(std::move(name)) {}
-
-    Member(const Member& other) = default;
-    Member& operator=(const Member& other) = default;
-
-    void display() const {
-        std::cout << "Member: " << name_ << std::endl;
-    }
-
-private:
-    std::string name_;
+    virtual ~AbstractAnimalFactory() = default;
+    virtual std::shared_ptr<Animal> createAnimal(const std::string& name) = 0;
 };
 
-class Library {
+class DogFactory : public AbstractAnimalFactory {
 public:
-    static Library& getInstance() {
-        static Library instance;
-        return instance;
+    std::shared_ptr<Animal> createAnimal(const std::string& name) override {
+        return std::make_shared<Dog>(name);
+    }
+};
+
+class CatFactory : public AbstractAnimalFactory {
+public:
+    std::shared_ptr<Animal> createAnimal(const std::string& name) override {
+        return std::make_shared<Cat>(name);
+    }
+};
+
+class AnimalContainer {
+private:
+    std::vector<std::shared_ptr<Animal>> container;
+    static int instanceCount;
+public:
+    AnimalContainer() {
+        ++instanceCount;
     }
 
-    void addItem(std::unique_ptr<LibraryItem> item) {
-        items_.push_back(std::move(item));
+    void addAnimal(const std::shared_ptr<Animal>& animal) {
+        container.push_back(animal);
     }
 
-    void addMember(Member member) {
-        members_.push_back(std::move(member));
-    }
-
-    void displayItems() const {
-        for (const auto& item : items_) {
-            item->display();
+    void displayAll() const {
+        for (const auto& animal : container) {
+            animal->display();
         }
     }
 
-    void displayMembers() const {
-        for (const auto& member : members_) {
-            member.display();
+    void removeAnimal(const std::string& name) {
+        std::erase_if(container, [&name](const std::shared_ptr<Animal>& animal) {
+            return animal->getType() == name;
+        });
+    }
+
+    void displayAnimalInfo(const std::string& name) const {
+        for (const auto& animal : container) {
+            if (animal->getType() == name) {
+                animal->info();
+            }
         }
     }
 
-private:
-    Library() = default;
-    std::vector<std::unique_ptr<LibraryItem>> items_;
-    std::list<Member> members_;
+    void sortAnimals() {
+        std::ranges::sort(container, [](const std::shared_ptr<Animal>& a, const std::shared_ptr<Animal>& b) {
+            return a->getType() < b->getType();
+        });
+    }
+
+    static void showInstanceCount() {
+        std::cout << "Total AnimalContainer instances: " << instanceCount << std::endl;
+    }
+
+    ~AnimalContainer() {
+        --instanceCount;
+    }
 };
 
-template <typename T>
-class Container {
+int AnimalContainer::instanceCount = 0;
+
+class AnimalObserver {
 public:
-    void add(T item) {
-        items_.push_back(std::move(item));
-    }
-
-    void sort() {
-        std::sort(items_.begin(), items_.end());
-    }
-
-    void display() const {
-        for (const auto& item : items_) {
-            std::cout << item << std::endl;
-        }
-    }
-
-private:
-    std::vector<T> items_;
+    virtual ~AnimalObserver() = default;
+    virtual void update(const std::shared_ptr<Animal>& animal) = 0;
 };
 
-std::unique_ptr<LibraryItem> createLibraryItem(const std::string& type, std::string title, std::string authorOrIssue) {
-    if (type == "book") {
-        return std::make_unique<Book>(std::move(title), std::move(authorOrIssue));
-    } else if (type == "magazine") {
-        return std::make_unique<Magazine>(std::move(title), std::stoi(authorOrIssue));
-    } else {
-        throw LibraryException("Unknown library item type");
+class AnimalNotifier {
+private:
+    std::list<std::shared_ptr<AnimalObserver>> observers;
+public:
+    void addObserver(const std::shared_ptr<AnimalObserver>& observer) {
+        observers.push_back(observer);
     }
+
+    void notify(const std::shared_ptr<Animal>& animal) {
+        for (const auto& observer : observers) {
+            observer->update(animal);
+        }
+    }
+};
+
+class AnimalDetailsObserver : public AnimalObserver {
+public:
+    void update(const std::shared_ptr<Animal>& animal) override {
+        std::lock_guard<std::mutex> lock(coutMutex);
+        std::cout << "Observer: ";
+        animal->info();
+    }
+};
+
+class AnimalFactory {
+public:
+    static std::shared_ptr<Animal> createAnimal(const std::string& type, const std::string& name) {
+        if (type == "Dog") {
+            return std::make_shared<Dog>(name);
+        } else if (type == "Cat") {
+            return std::make_shared<Cat>(name);
+        } else {
+            throw std::invalid_argument("Unknown animal type");
+        }
+    }
+};
+
+void menu() {
+    std::cout << "1. Add Animal\n";
+    std::cout << "2. Display All Animals\n";
+    std::cout << "3. Remove Animal\n";
+    std::cout << "4. Display Animal Info\n";
+    std::cout << "5. Sort Animals\n";
+    std::cout << "6. Show AnimalContainer Instance Count\n";
+    std::cout << "7. Exit\n";
+}
+
+void threadTest(const AnimalContainer& container) {
+    std::cout << "Started a thread for displaying all animals.\n";
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    container.displayAll();
 }
 
 int main() {
-    Library& library = Library::getInstance();
+    AnimalContainer container;
+    AnimalNotifier notifier;
+    AnimalDetailsObserver observer;
 
-    while (true) {
-        std::cout << "1. Add Book\n";
-        std::cout << "2. Add Magazine\n";
-        std::cout << "3. Add Member\n";
-        std::cout << "4. Display Items\n";
-        std::cout << "5. Display Members\n";
-        std::cout << "6. Exit\n";
-        std::cout << "Choose an option: ";
+    notifier.addObserver(std::make_shared<AnimalDetailsObserver>(observer));
 
+    bool running = true;
+    while (running) {
+        menu();
         int choice;
         std::cin >> choice;
-        std::cin.ignore();
 
         switch (choice) {
-            case 1: {
-                std::string title, author;
-                std::cout << "Enter book title: ";
-                std::getline(std::cin, title);
-                std::cout << "Enter book author: ";
-                std::getline(std::cin, author);
-                library.addItem(createLibraryItem("book", std::move(title), std::move(author)));
-                break;
+        case 1: {
+            std::string type, name;
+            std::cout << "Enter animal type (Dog/Cat): ";
+            std::cin >> type;
+            std::cout << "Enter animal name: ";
+            std::cin >> name;
+
+            try {
+                auto animal = AnimalFactory::createAnimal(type, name);
+                container.addAnimal(animal);
+                notifier.notify(animal);
+            } catch (const std::invalid_argument& e) {
+                std::cout << e.what() << std::endl;
             }
-            case 2: {
-                std::string title;
-                int issue;
-                std::cout << "Enter magazine title: ";
-                std::getline(std::cin, title);
-                std::cout << "Enter magazine issue number: ";
-                std::cin >> issue;
-                std::cin.ignore();
-                library.addItem(createLibraryItem("magazine", std::move(title), std::to_string(issue)));
-                break;
-            }
-            case 3: {
-                std::string memberName;
-                std::cout << "Enter member name: ";
-                std::getline(std::cin, memberName);
-                library.addMember(Member(std::move(memberName)));
-                break;
-            }
-            case 4:
-                library.displayItems();
-                break;
-            case 5:
-                library.displayMembers();
-                break;
-            case 6:
-                return 0;
-            default:
-                std::cout << "Invalid option, please try again.\n";
-                break;
+            break;
         }
+        case 2:
+            container.displayAll();
+            break;
+        case 3: {
+            std::string name;
+            std::cout << "Enter animal name to remove: ";
+            std::cin >> name;
+            container.removeAnimal(name);
+            break;
+        }
+        case 4: {
+            std::string name;
+            std::cout << "Enter animal type to get info: ";
+            std::cin >> name;
+            container.displayAnimalInfo(name);
+            break;
+        }
+        case 5:
+            container.sortAnimals();
+            std::cout << "Animals sorted.\n";
+            break;
+        case 6:
+            AnimalContainer::showInstanceCount();
+            break;
+        case 7:
+            running = false;
+            break;
+        default:
+            std::cout << "Invalid option. Please try again.\n";
+        }
+
+        std::thread t(threadTest, std::ref(container));
+        t.join();
     }
+
+    return 0; // No need for explicit return; C++ will return 0 implicitly.
 }
